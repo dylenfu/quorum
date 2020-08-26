@@ -291,7 +291,6 @@ type raft struct {
 	logger Logger
 }
 
-
 func newRaft(c *Config) *raft {
 	if err := c.validate(); err != nil {
 		panic(err.Error())
@@ -305,7 +304,6 @@ func newRaft(c *Config) *raft {
 	peers := c.peers
 	learners := c.learners
 	c.Logger.Info("newRaft ", "config.peers", cs.Nodes, " config.learners", cs.Learners)
-
 
 	if len(cs.Nodes) > 0 || len(cs.Learners) > 0 {
 		if len(peers) > 0 || len(learners) > 0 {

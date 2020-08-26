@@ -181,8 +181,6 @@ type Peer struct {
 	Context []byte
 }
 
-
-
 // StartNode returns a new Node given configuration and a list of raft peers.
 // It appends a ConfChangeAddNode entry for each given peer to the initial log.
 func StartNode(c *Config, peers []Peer) Node {
@@ -472,7 +470,6 @@ func (n *node) step(ctx context.Context, m pb.Message) error {
 func (n *node) stepWait(ctx context.Context, m pb.Message) error {
 	return n.stepWithWaitOption(ctx, m, true)
 }
-
 
 // Step advances the state machine using msgs. The ctx.Err() will be returned,
 // if any.

@@ -28,6 +28,7 @@ import (
 	"unsafe"
 )
 
+// Get fetches LoadAverage data
 func (self *LoadAverage) Get() error {
 	avg := []C.double{0, 0, 0}
 
@@ -40,18 +41,7 @@ func (self *LoadAverage) Get() error {
 	return nil
 }
 
-func (self *Uptime) Get() error {
-	tv := syscall.Timeval32{}
-
-	if err := sysctlbyname("kern.boottime", &tv); err != nil {
-		return err
-	}
-
-	self.Length = time.Since(time.Unix(int64(tv.Sec), int64(tv.Usec)*1000)).Seconds()
-
-	return nil
-}
-
+// Get fetches memory data
 func (self *Mem) Get() error {
 	var vmstat C.vm_statistics_data_t
 
@@ -59,7 +49,7 @@ func (self *Mem) Get() error {
 		return err
 	}
 
-	if err := vm_info(&vmstat); err != nil {
+	if err := vmInfo(&vmstat); err != nil {
 		return err
 	}
 
@@ -73,28 +63,31 @@ func (self *Mem) Get() error {
 	return nil
 }
 
-type xsw_usage struct {
+type xswUsage struct {
 	Total, Avail, Used uint64
 }
 
+// Get fetches swap data
 func (self *Swap) Get() error {
-	sw_usage := xsw_usage{}
+	swUsage := xswUsage{}
 
-	if err := sysctlbyname("vm.swapusage", &sw_usage); err != nil {
+	if err := sysctlbyname("vm.swapusage", &swUsage); err != nil {
 		return err
 	}
 
-	self.Total = sw_usage.Total
-	self.Used = sw_usage.Used
-	self.Free = sw_usage.Avail
+	self.Total = swUsage.Total
+	self.Used = swUsage.Used
+	self.Free = swUsage.Avail
 
 	return nil
 }
 
+// Get fetches hugepages data
 func (self *HugeTLBPages) Get() error {
 	return ErrNotImplemented{runtime.GOOS}
 }
 
+// Get fetches CPU data
 func (self *Cpu) Get() error {
 	var count C.mach_msg_type_number_t = C.HOST_CPU_LOAD_INFO_COUNT
 	var cpuload C.host_cpu_load_info_data_t
@@ -116,6 +109,7 @@ func (self *Cpu) Get() error {
 	return nil
 }
 
+// Get fetches CPU list data
 func (self *CpuList) Get() error {
 	var count C.mach_msg_type_number_t
 	var cpuload *C.processor_cpu_load_info_data_t
@@ -139,11 +133,11 @@ func (self *CpuList) Get() error {
 
 	// the body of struct processor_cpu_load_info
 	// aka processor_cpu_load_info_data_t
-	var cpu_ticks [C.CPU_STATE_MAX]uint32
+	var cpuTicks [C.CPU_STATE_MAX]uint32
 
 	// copy the cpuload array to a []byte buffer
 	// where we can binary.Read the data
-	size := int(ncpu) * binary.Size(cpu_ticks)
+	size := int(ncpu) * binary.Size(cpuTicks)
 	buf := C.GoBytes(unsafe.Pointer(cpuload), C.int(size))
 
 	bbuf := bytes.NewBuffer(buf)
@@ -153,15 +147,15 @@ func (self *CpuList) Get() error {
 	for i := 0; i < int(ncpu); i++ {
 		cpu := Cpu{}
 
-		err := binary.Read(bbuf, binary.LittleEndian, &cpu_ticks)
+		err := binary.Read(bbuf, binary.LittleEndian, &cpuTicks)
 		if err != nil {
 			return err
 		}
 
-		cpu.User = uint64(cpu_ticks[C.CPU_STATE_USER])
-		cpu.Sys = uint64(cpu_ticks[C.CPU_STATE_SYSTEM])
-		cpu.Idle = uint64(cpu_ticks[C.CPU_STATE_IDLE])
-		cpu.Nice = uint64(cpu_ticks[C.CPU_STATE_NICE])
+		cpu.User = uint64(cpuTicks[C.CPU_STATE_USER])
+		cpu.Sys = uint64(cpuTicks[C.CPU_STATE_SYSTEM])
+		cpu.Idle = uint64(cpuTicks[C.CPU_STATE_IDLE])
+		cpu.Nice = uint64(cpuTicks[C.CPU_STATE_NICE])
 
 		self.List = append(self.List, cpu)
 	}
@@ -169,10 +163,12 @@ func (self *CpuList) Get() error {
 	return nil
 }
 
+// Get returns FD usage data
 func (self *FDUsage) Get() error {
 	return ErrNotImplemented{runtime.GOOS}
 }
 
+// Get returns filesystem data
 func (self *FileSystemList) Get() error {
 	num, err := syscall.Getfsstat(nil, C.MNT_NOWAIT)
 	if err != nil {
@@ -190,10 +186,10 @@ func (self *FileSystemList) Get() error {
 
 	for i := 0; i < num; i++ {
 		fs := FileSystem{}
-
-		fs.DirName = bytePtrToString(&buf[i].Mntonname[0])
-		fs.DevName = bytePtrToString(&buf[i].Mntfromname[0])
-		fs.SysTypeName = bytePtrToString(&buf[i].Fstypename[0])
+		fmt.Printf("Got Raw buffer: %#v\n", buf[i].Fstypename)
+		fs.DirName = byteListToString(buf[i].Mntonname[:])
+		fs.DevName = byteListToString(buf[i].Mntfromname[:])
+		fs.SysTypeName = byteListToString(buf[i].Fstypename[:])
 
 		fslist = append(fslist, fs)
 	}
@@ -203,6 +199,7 @@ func (self *FileSystemList) Get() error {
 	return err
 }
 
+// Get returns a process list
 func (self *ProcList) Get() error {
 	n := C.proc_listpids(C.PROC_ALL_PIDS, 0, nil, 0)
 	if n <= 0 {
@@ -235,10 +232,11 @@ func (self *ProcList) Get() error {
 	return nil
 }
 
+// Get returns process state data
 func (self *ProcState) Get(pid int) error {
 	info := C.struct_proc_taskallinfo{}
 
-	if err := task_info(pid, &info); err != nil {
+	if err := taskInfo(pid, &info); err != nil {
 		return err
 	}
 
@@ -281,10 +279,11 @@ func (self *ProcState) Get(pid int) error {
 	return nil
 }
 
+// Get returns process memory data
 func (self *ProcMem) Get(pid int) error {
 	info := C.struct_proc_taskallinfo{}
 
-	if err := task_info(pid, &info); err != nil {
+	if err := taskInfo(pid, &info); err != nil {
 		return err
 	}
 
@@ -295,10 +294,11 @@ func (self *ProcMem) Get(pid int) error {
 	return nil
 }
 
+// Get returns process time data
 func (self *ProcTime) Get(pid int) error {
 	info := C.struct_proc_taskallinfo{}
 
-	if err := task_info(pid, &info); err != nil {
+	if err := taskInfo(pid, &info); err != nil {
 		return err
 	}
 
@@ -316,6 +316,7 @@ func (self *ProcTime) Get(pid int) error {
 	return nil
 }
 
+// Get returns process arg data
 func (self *ProcArgs) Get(pid int) error {
 	var args []string
 
@@ -323,13 +324,14 @@ func (self *ProcArgs) Get(pid int) error {
 		args = append(args, arg)
 	}
 
-	err := kern_procargs(pid, nil, argv, nil)
+	err := kernProcargs(pid, nil, argv, nil)
 
 	self.List = args
 
 	return err
 }
 
+// Get returns process environment data
 func (self *ProcEnv) Get(pid int) error {
 	if self.Vars == nil {
 		self.Vars = map[string]string{}
@@ -339,25 +341,27 @@ func (self *ProcEnv) Get(pid int) error {
 		self.Vars[k] = v
 	}
 
-	return kern_procargs(pid, nil, nil, env)
+	return kernProcargs(pid, nil, nil, env)
 }
 
+// Get returns process exec data
 func (self *ProcExe) Get(pid int) error {
 	exe := func(arg string) {
 		self.Name = arg
 	}
 
-	return kern_procargs(pid, exe, nil, nil)
+	return kernProcargs(pid, exe, nil, nil)
 }
 
+// Get returns process file usage
 func (self *ProcFDUsage) Get(pid int) error {
 	return ErrNotImplemented{runtime.GOOS}
 }
 
-// wrapper around sysctl KERN_PROCARGS2
+// kernProcargs is a wrapper around sysctl KERN_PROCARGS2
 // callbacks params are optional,
 // up to the caller as to which pieces of data they want
-func kern_procargs(pid int,
+func kernProcargs(pid int,
 	exe func(string),
 	argv func(string),
 	env func(string, string)) error {
@@ -450,7 +454,7 @@ func sysctl(mib []C.int, old *byte, oldlen *uintptr,
 	return
 }
 
-func vm_info(vmstat *C.vm_statistics_data_t) error {
+func vmInfo(vmstat *C.vm_statistics_data_t) error {
 	var count C.mach_msg_type_number_t = C.HOST_VM_INFO_COUNT
 
 	status := C.host_statistics(
@@ -485,7 +489,7 @@ func sysctlbyname(name string, data interface{}) (err error) {
 	return binary.Read(bbuf, binary.LittleEndian, data)
 }
 
-func task_info(pid int, info *C.struct_proc_taskallinfo) error {
+func taskInfo(pid int, info *C.struct_proc_taskallinfo) error {
 	size := C.int(unsafe.Sizeof(*info))
 	ptr := unsafe.Pointer(info)
 
